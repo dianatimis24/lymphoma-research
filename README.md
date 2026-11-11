@@ -12,10 +12,22 @@ The methodology builds on a baseline pipeline developed in the research group of
 
 ```
 src/lymphdecoder/   package with the new code
+  io/formats.py     converters to the common methylation format
 tests/              unit tests (pytest)
 ```
 
 Data and results are not stored in the repository.
+
+## Common format
+
+One tab-separated file per sample, with genome build hg38:
+
+| Column | Meaning |
+|---|---|
+| `chr` | chromosome (`chr1`, ..., `chr22`, `chrX`, `chrY`, `chrM`) |
+| `base` | 1-based position of the cytosine of the CpG on the forward strand |
+| `coverage` | number of reads covering the CpG (`NA` for arrays) |
+| `freqC` | methylation percentage, between 0 and 100 |
 
 ## Installation and tests
 
