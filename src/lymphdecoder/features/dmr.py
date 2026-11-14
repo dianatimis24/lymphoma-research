@@ -10,6 +10,7 @@ never have to be held in memory together.
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from itertools import combinations
 from typing import Iterable
 
@@ -107,3 +108,46 @@ def identify_dmrs(samples: dict[str, pd.DataFrame], labels: dict[str, str],
     if result.empty:
         return pd.DataFrame(columns=REGION_COLUMNS + ["n_pairs", "max_diff"])
     return result.reset_index().sort_values(REGION_COLUMNS).reset_index(drop=True)
+
+
+DMR_FINDERS: dict[str, type["DMRFinder"]] = {}
+
+
+def register_dmr_finder(name: str):
+    """Class decorator that makes a DMR identification method available under ``name``."""
+    def decorator(cls):
+        cls.name = name
+        DMR_FINDERS[name] = cls
+        return cls
+    return decorator
+
+
+def make_dmr_finder(name: str, **params) -> "DMRFinder":
+    if name not in DMR_FINDERS:
+        raise ValueError(f"Unknown DMR method {name!r}, expected one of {sorted(DMR_FINDERS)}")
+    return DMR_FINDERS[name](**params)
+
+
+class DMRFinder(ABC):
+    """Identifies DMRs from the training samples of a ``BinStore``."""
+
+    name = "abstract"
+
+    @abstractmethod
+    def find(self, store, sample_ids: Iterable[str], labels: pd.Series) -> pd.DataFrame:
+        """Return a dataframe indexed by bin key, one row per DMR."""
+
+
+@register_dmr_finder("naive")
+class NaiveDMRFinder(DMRFinder):
+    """Bins whose class means differ by at least ``threshold`` for some pair of classes."""
+
+    def __init__(self, min_cpgs: int = 10, min_sample_fraction: float = 0.5,
+                 threshold: float = 25.0):
+        self.min_cpgs = min_cpgs
+        self.min_sample_fraction = min_sample_fraction
+        self.threshold = threshold
+
+    def find(self, store, sample_ids, labels):
+        return dmrs_from_store(store, sample_ids, labels, self.min_cpgs,
+                               self.min_sample_fraction, self.threshold)

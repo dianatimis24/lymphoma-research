@@ -51,15 +51,16 @@ def test_cross_validation_separates_synthetic_classes(synthetic):
 
 def test_dmrs_are_computed_only_on_training_samples(synthetic, monkeypatch):
     store, labels = synthetic
+    from lymphdecoder.features import dmr
     seen = []
-    original = cv.dmrs_from_store
+    original = dmr.dmrs_from_store
 
     def spy(store_, ids, *args, **kwargs):
         ids = list(ids)
         seen.append(set(ids))
         return original(store_, ids, *args, **kwargs)
 
-    monkeypatch.setattr(cv, "dmrs_from_store", spy)
+    monkeypatch.setattr(dmr, "dmrs_from_store", spy)
     ids = labels.index.to_numpy()
     train, test = ids[::2], ids[1::2]
     cv.run_fold(store, labels, train, test, FAST)

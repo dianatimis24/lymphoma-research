@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import RepeatedStratifiedKFold, StratifiedKFold
 
-from lymphdecoder.features.dmr import dmrs_from_store
+from lymphdecoder.features.dmr import make_dmr_finder
 from lymphdecoder.features.regions import decode_keys, region_id
 from lymphdecoder.features.selection import FeatureSelector
 from lymphdecoder.models.classifiers import make_classifier
@@ -32,6 +32,7 @@ class PipelineConfig:
     """All parameters of one run of the pipeline."""
 
     bin_size: int = 1000
+    dmr_method: str = "naive"
     min_cpgs: int = 10
     min_sample_fraction: float = 0.5
     dmr_threshold: float = 25.0
@@ -49,9 +50,10 @@ class PipelineConfig:
 
 
 def _dmr_keys(store, ids, labels, cfg: PipelineConfig) -> np.ndarray:
-    dmrs = dmrs_from_store(store, ids, labels, cfg.min_cpgs,
-                           cfg.min_sample_fraction, cfg.dmr_threshold)
-    return dmrs.index.to_numpy()
+    finder = make_dmr_finder(cfg.dmr_method, min_cpgs=cfg.min_cpgs,
+                             min_sample_fraction=cfg.min_sample_fraction,
+                             threshold=cfg.dmr_threshold)
+    return finder.find(store, list(ids), labels).index.to_numpy()
 
 
 def _fit_predict(X_train, y_train, X_test, cfg: PipelineConfig, X_select=None, y_select=None):
