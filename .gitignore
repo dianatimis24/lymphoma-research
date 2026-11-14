@@ -8,7 +8,7 @@ __pycache__/
 *.egg-info/
 
 Results/
-data/
+/data/
 *.pkl
 *.bin
 *.joblib
