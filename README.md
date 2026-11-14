@@ -11,9 +11,19 @@ The methodology builds on a baseline pipeline developed in the research group of
 ## Structure
 
 ```
-src/lymphdecoder/   package with the new code
-  io/formats.py     converters to the common methylation format
-tests/              unit tests (pytest)
+src/lymphdecoder/
+  io/formats.py               converters to the common methylation format
+  data.py                     sample metadata (class, platform, dataset, sample type)
+  preprocessing/qc.py         Twist panel and coverage filtering
+  features/regions.py         bins and mean methylation of regions
+  features/bin_store.py       per-sample bin means cached on disk
+  features/dmr.py             naive DMRs for all pairs of classes
+  features/selection.py       training-only imputation, variance filter, mRMR
+  models/classifiers.py       XGBoost, random forest, SVM, L1 logistic regression
+  evaluation/metrics.py       macro F1, MCC, feature stability (Jaccard)
+  evaluation/cv.py            fixed split, nested cross-validation, leaky variant
+  utils/reproducibility.py    seeds and record of each run (config, commit, versions)
+tests/                        unit tests (pytest)
 ```
 
 Data and results are not stored in the repository.
