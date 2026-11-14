@@ -71,95 +71,35 @@ def validate(df: pd.DataFrame) -> None:
 
 
 def read_array(path: str | Path, scale: str = "auto") -> pd.DataFrame:
-    """Read one array sample with columns ``chr``, ``base`` and a methylation column.
-
-    The methylation column is ``freqC`` or, if absent, the third column (beta values).
-    Arrays give no read coverage.
-    """
-    df = pd.read_csv(path, sep="\t")
-    value_col = "freqC" if "freqC" in df.columns else df.columns[2]
-    out = pd.DataFrame({
-        "chr": df["chr"],
-        "base": df["base"],
-        "freqC": to_percent(df[value_col], scale),
-    })
-    return finalize(out)
+    """Read one array sample (see ``readers.ArrayReader``)."""
+    from .readers import ArrayReader
+    return ArrayReader(scale=scale).read(path)
 
 
 def read_wgbs_bed(path: str | Path) -> pd.DataFrame:
-    """Read a WGBS BED file: ``chr start end methylated_reads total_reads``.
-
-    BED coordinates are 0-based, so the 1-based position is ``start + 1``.
-    """
-    df = pd.read_csv(path, sep="\t", header=None,
-                     names=["chr", "start", "end", "methylated", "coverage"],
-                     comment="#")
-    df = df[df["coverage"] > 0]
-    out = pd.DataFrame({
-        "chr": df["chr"],
-        "base": df["start"] + 1,
-        "coverage": df["coverage"],
-        "freqC": df["methylated"] * 100.0 / df["coverage"],
-    })
-    return finalize(out)
+    """Read one WGBS BED file (see ``readers.WgbsBedReader``)."""
+    from .readers import WgbsBedReader
+    return WgbsBedReader().read(path)
 
 
 def read_rrbs_methylkit(path: str | Path, merge_strands: bool = True) -> pd.DataFrame:
-    """Read an RRBS file in methylKit format.
-
-    Columns: ``chrBase chr base strand coverage freqC freqT``, with 1-based
-    positions and strand ``F`` or ``R``. A CpG measured on the reverse strand is
-    reported at the position of its G, one base after the C on the forward strand.
-    With ``merge_strands`` the two measurements of a CpG are combined into one,
-    weighting the methylation percentages by coverage.
-    """
-    df = pd.read_csv(path, sep="\t")
-    base = df["base"].astype("int64")
-    if merge_strands:
-        base = base.where(df["strand"] == "F", base - 1)
-    out = pd.DataFrame({
-        "chr": df["chr"],
-        "base": base,
-        "coverage": df["coverage"].astype("int64"),
-        "methylated": df["coverage"] * df["freqC"] / 100.0,
-    })
-    out = out.groupby(["chr", "base"], as_index=False)[["coverage", "methylated"]].sum()
-    out["freqC"] = out["methylated"] * 100.0 / out["coverage"]
-    return finalize(out.drop(columns="methylated"))
+    """Read one RRBS methylKit file (see ``readers.RrbsMethylKitReader``)."""
+    from .readers import RrbsMethylKitReader
+    return RrbsMethylKitReader(merge_strands=merge_strands).read(path)
 
 
 def split_matrix(path: str | Path, sample_columns: list[str], chr_col: str = "chr",
                  base_col: str = "base", scale: str = "auto",
                  sep: str = "\t") -> dict[str, pd.DataFrame]:
-    """Split a matrix with one column per sample into common-format dataframes.
-
-    Used for array matrices (beta values) and for the EM-seq rate matrix, which
-    store all samples of a dataset in a single file.
-    """
-    df = pd.read_csv(path, sep=sep, usecols=[chr_col, base_col] + sample_columns)
-    samples = {}
-    for col in sample_columns:
-        out = pd.DataFrame({
-            "chr": df[chr_col],
-            "base": df[base_col],
-            "freqC": to_percent(df[col], scale),
-        })
-        samples[col] = finalize(out)
-    return samples
+    """Split a matrix with one column per sample (see ``readers.MatrixReader``)."""
+    from .readers import MatrixReader
+    return MatrixReader(chr_col, base_col, scale, sep).read_samples(path, sample_columns)
 
 
-READERS = {
-    "array": read_array,
-    "wgbs": read_wgbs_bed,
-    "rrbs": read_rrbs_methylkit,
-}
-
-
-def convert(path: str | Path, platform: str, output: str | Path, **kwargs) -> pd.DataFrame:
-    """Convert one file to the common format and write it to ``output``."""
-    if platform not in READERS:
-        raise ValueError(f"Unknown platform {platform!r}, expected one of {list(READERS)}")
-    df = READERS[platform](path, **kwargs)
+def convert(path: str | Path, reader: str, output: str | Path, **params) -> pd.DataFrame:
+    """Convert one single-sample file with the named reader and write it to ``output``."""
+    from .readers import make_reader
+    df = make_reader(reader, **params).read(path)
     write(df, output)
     return df
 
