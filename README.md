@@ -12,7 +12,9 @@ The methodology builds on a baseline pipeline developed in the research group of
 
 ```
 src/lymphdecoder/
-  io/formats.py               converters to the common methylation format
+  io/formats.py               common methylation format (validation, reading, writing)
+  io/readers.py               one reader class per input format, registered by name
+  processing.py               configuration-driven processing of all datasets
   data.py                     sample metadata (class, platform, dataset, sample type)
   preprocessing/qc.py         Twist panel and coverage filtering
   features/regions.py         bins and mean methylation of regions
@@ -23,8 +25,20 @@ src/lymphdecoder/
   evaluation/metrics.py       macro F1, MCC, feature stability (Jaccard)
   evaluation/cv.py            fixed split, nested cross-validation, leaky variant
   utils/reproducibility.py    seeds and record of each run (config, commit, versions)
+scripts/process_datasets.py   converts, filters and describes all datasets
+configs/                      example configuration files
 tests/                        unit tests (pytest)
 ```
+
+## Processing the datasets
+
+All datasets are described in one YAML file (see `configs/datasets.example.yaml`): where the files are, which reader understands them, the platform, the sample type and the class of each sample. A new input format only needs a new reader class registered under a new name.
+
+```bash
+python scripts/process_datasets.py configs/datasets.yaml
+```
+
+The command writes one common-format file per sample, filtered by the Twist panel and by coverage, and the metadata file `samples.csv`.
 
 Data and results are not stored in the repository.
 
