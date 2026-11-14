@@ -1,0 +1,27 @@
+output: ../data/demo
+min_coverage: 1
+
+datasets:
+  - name: DEMO_RRBS
+    reader: rrbs_methylkit
+    folder: ../tests/data
+    pattern: "rrbs_*.tsv"
+    class: DLBCL
+    platform: rrbs
+    sample_type: tissue
+
+  - name: DEMO_WGBS
+    reader: wgbs_bed
+    folder: ../tests/data
+    pattern: "wgbs_*.bed"
+    class: Normal
+    platform: wgbs
+    sample_type: plasma
+
+  - name: DEMO_ARRAY
+    reader: array
+    folder: ../tests/data
+    pattern: "array_*.tsv"
+    class: Follicular lymphoma
+    platform: array_epic
+    sample_type: tissue

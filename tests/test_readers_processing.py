@@ -121,3 +121,18 @@ def test_processed_samples_are_not_converted_again(tmp_path):
 def test_configuration_errors_are_reported(tmp_path, bad, message):
     with pytest.raises(ValueError, match=message):
         ProcessingConfig.load(make_project(tmp_path, bad))
+
+
+def test_missing_input_paths_are_listed(tmp_path):
+    config = ProcessingConfig.load(make_project(tmp_path))
+    (tmp_path / "panel.bed").unlink()
+    config.datasets[0].folder = tmp_path / "nowhere"
+    with pytest.raises(FileNotFoundError) as err:
+        process(config)
+    assert "panel.bed" in str(err.value) and "nowhere" in str(err.value)
+
+
+def test_demo_configuration_runs():
+    root = Path(__file__).parent.parent
+    config = ProcessingConfig.load(root / "configs" / "demo.yaml")
+    config.check_paths()

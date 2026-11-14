@@ -90,6 +90,11 @@ class DatasetSpec:
                    exclude=list(d.get("exclude") or []),
                    reader_params=dict(d.get("reader_params") or {}))
 
+    def missing_paths(self) -> list[Path]:
+        """Input paths of this dataset that do not exist."""
+        path = self.folder if self.folder is not None else self.file
+        return [] if path.exists() else [path]
+
     def iter_samples(self) -> Iterator[tuple[str, str, pd.DataFrame]]:
         """Yield ``(sample name, class, dataframe)`` for every sample of the dataset."""
         reader = make_reader(self.reader, **self.reader_params)
@@ -127,6 +132,15 @@ class ProcessingConfig:
                    panel=base / raw["panel"] if raw.get("panel") else None,
                    min_coverage=int(raw.get("min_coverage", 10)))
 
+    def check_paths(self) -> None:
+        """Raise ``FileNotFoundError`` listing every input path that does not exist."""
+        missing = [p for spec in self.datasets for p in spec.missing_paths()]
+        if self.panel is not None and not self.panel.exists():
+            missing.insert(0, self.panel)
+        if missing:
+            lines = "\n".join(f"  - {p.resolve()}" for p in missing)
+            raise FileNotFoundError(f"These paths from the configuration do not exist:\n{lines}")
+
 
 def process(config: ProcessingConfig, overwrite: bool = False) -> pd.DataFrame:
     """Convert and filter all samples; write them and ``samples.csv`` to ``config.output``.
@@ -134,6 +148,7 @@ def process(config: ProcessingConfig, overwrite: bool = False) -> pd.DataFrame:
     Samples whose output file already exists are not processed again unless
     ``overwrite`` is set. Returns the metadata table.
     """
+    config.check_paths()
     panel = read_panel(config.panel) if config.panel else None
     rows = []
     for spec in config.datasets:

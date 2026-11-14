@@ -16,7 +16,10 @@ def main():
     parser.add_argument("--overwrite", action="store_true", help="process samples again")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    meta = process(ProcessingConfig.load(args.config), overwrite=args.overwrite)
+    try:
+        meta = process(ProcessingConfig.load(args.config), overwrite=args.overwrite)
+    except (FileNotFoundError, ValueError) as err:
+        raise SystemExit(f"Error: {err}")
     print(meta.groupby(["class", "platform"]).size().to_string())
     print(f"{len(meta)} samples")
 
