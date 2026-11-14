@@ -1,0 +1,42 @@
+output: ../data/processed
+panel: ../data/reference/Twist_Methylome_hg38_annotated_collapsed.bed
+min_coverage: 10
+
+datasets:
+  - name: GSE66329
+    reader: rrbs_methylkit
+    folder: ../data/raw/DLBCL_RRBS
+    pattern: "*.txt"
+    class: DLBCL
+    platform: rrbs
+    sample_type: tissue
+
+  - name: GSE214980
+    reader: rrbs_methylkit
+    folder: ../data/raw/TCell_RRBS
+    pattern: "*.txt"
+    class: T-cell lymphoma
+    platform: rrbs
+    sample_type: tissue
+
+  - name: GSE164600
+    reader: wgbs_bed
+    folder: ../data/raw/Normal_WGBS
+    pattern: "*.bed"
+    class: Normal
+    platform: wgbs
+    sample_type: plasma
+
+  - name: GSE171424
+    reader: matrix
+    reader_params: {chr_col: chr, base_col: pos, sep: ",", scale: fraction}
+    file: ../data/raw/beta_with_chr_pos_EPIC.csv
+    platform: array_epic
+    sample_type: tissue
+    exclude: [UNK001, UNK002, UNK005]
+    samples:
+      FL002: Follicular lymphoma
+      FL003: Follicular lymphoma
+      MCL001: Mantle cell lymphoma
+      MZL001: Marginal zone lymphoma
+      SLL001: CLL/SLL
