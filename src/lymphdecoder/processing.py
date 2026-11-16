@@ -18,6 +18,7 @@ Example::
         class: DLBCL
         platform: rrbs
         sample_type: tissue
+        liftover: reference/hg19ToHg38.over.chain.gz
       - name: GSE171424
         reader: matrix
         reader_params: {chr_col: chr, base_col: pos, sep: ",", scale: fraction}
@@ -42,9 +43,21 @@ import yaml
 from .data import REQUIRED_COLUMNS
 from .io.formats import write
 from .io.readers import READERS, MultiSampleReader, Reader, make_reader
+from .preprocessing.liftover import Chain, lift
 from .preprocessing.qc import filter_by_coverage, filter_by_panel, read_panel
 
 logger = logging.getLogger(__name__)
+
+
+DATA_SUFFIXES = {".gz", ".bz2", ".zip", ".txt", ".tsv", ".csv", ".bed", ".cov"}
+
+
+def sample_name(path: Path) -> str:
+    """File name without data suffixes: ``GSM1_x.bed.gz`` -> ``GSM1_x``."""
+    name = path.name
+    while Path(name).suffix.lower() in DATA_SUFFIXES:
+        name = Path(name).stem
+    return name
 
 
 @dataclass
@@ -62,11 +75,14 @@ class DatasetSpec:
     samples: dict[str, str] = field(default_factory=dict)
     exclude: list[str] = field(default_factory=list)
     reader_params: dict = field(default_factory=dict)
+    liftover: Path | None = None
+    min_coverage: int | None = None
 
     @classmethod
     def from_dict(cls, d: dict, base: Path) -> "DatasetSpec":
         known = {"name", "reader", "platform", "sample_type", "folder", "pattern", "file",
-                 "class", "samples", "exclude", "reader_params"}
+                 "class", "samples", "exclude", "reader_params", "liftover",
+                 "min_coverage"}
         unknown = set(d) - known
         if unknown:
             raise ValueError(f"Dataset {d.get('name')!r}: unknown keys {sorted(unknown)}")
@@ -88,12 +104,16 @@ class DatasetSpec:
                    file=base / d["file"] if "file" in d else None,
                    sample_class=d.get("class"), samples=dict(d.get("samples") or {}),
                    exclude=list(d.get("exclude") or []),
-                   reader_params=dict(d.get("reader_params") or {}))
+                   reader_params=dict(d.get("reader_params") or {}),
+                   liftover=base / d["liftover"] if d.get("liftover") else None,
+                   min_coverage=int(d["min_coverage"]) if "min_coverage" in d else None)
 
     def missing_paths(self) -> list[Path]:
         """Input paths of this dataset that do not exist."""
-        path = self.folder if self.folder is not None else self.file
-        return [] if path.exists() else [path]
+        paths = [self.folder if self.folder is not None else self.file]
+        if self.liftover is not None:
+            paths.append(self.liftover)
+        return [p for p in paths if not p.exists()]
 
     def iter_samples(self) -> Iterator[tuple[str, str, pd.DataFrame]]:
         """Yield ``(sample name, class, dataframe)`` for every sample of the dataset."""
@@ -102,8 +122,9 @@ class DatasetSpec:
             if not isinstance(reader, Reader):
                 raise ValueError(f"Reader {self.reader!r} cannot read single-sample files")
             for path in sorted(p for p in self.folder.glob(self.pattern) if p.is_file()):
-                if path.stem not in self.exclude:
-                    yield path.stem, self.sample_class, reader.read(path)
+                name = sample_name(path)
+                if name not in self.exclude and path.stem not in self.exclude:
+                    yield name, self.sample_class, reader.read(path)
         else:
             if not isinstance(reader, MultiSampleReader):
                 raise ValueError(f"Reader {self.reader!r} cannot read multi-sample files")
@@ -157,9 +178,12 @@ def process(config: ProcessingConfig, overwrite: bool = False) -> pd.DataFrame:
             out_file = out_dir / f"{sample}.tsv"
             if overwrite or not out_file.exists():
                 n_raw = len(df)
+                if spec.liftover is not None:
+                    df = lift(df, Chain.load(spec.liftover))
                 if panel is not None:
                     df = filter_by_panel(df, panel)
-                df = filter_by_coverage(df, config.min_coverage)
+                min_cov = spec.min_coverage if spec.min_coverage is not None else config.min_coverage
+                df = filter_by_coverage(df, min_cov)
                 write(df, out_file)
                 logger.info("%s/%s: %d -> %d CpGs", spec.name, sample, n_raw, len(df))
             rows.append({"sample_id": f"{spec.name}/{sample}",
