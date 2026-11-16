@@ -134,5 +134,22 @@ def test_missing_input_paths_are_listed(tmp_path):
 
 def test_demo_configuration_runs():
     root = Path(__file__).parent.parent
-    config = ProcessingConfig.load(root / "configs" / "demo.yaml")
+    config = ProcessingConfig.load(root / "configs" / "demo_datasets.yaml")
     config.check_paths()
+
+
+def test_sample_names_drop_data_suffixes():
+    from lymphdecoder.processing import sample_name
+    assert sample_name(Path("GSM1621087_methylCall_Sample_1D.txt.gz")) == "GSM1621087_methylCall_Sample_1D"
+    assert sample_name(Path("GSM5014687_CTRL1.bed.gz")) == "GSM5014687_CTRL1"
+    assert sample_name(Path("GSM6619570_cpg.PTCL2_C1D-6_DNA.10x.txt.gz")) == "GSM6619570_cpg.PTCL2_C1D-6_DNA.10x"
+
+
+def test_coverage_threshold_can_be_set_per_dataset(tmp_path):
+    path = make_project(tmp_path)
+    raw = yaml.safe_load(path.read_text())
+    raw["datasets"][1]["min_coverage"] = 1
+    path.write_text(yaml.safe_dump(raw))
+    meta = process(ProcessingConfig.load(path)).set_index("sample_id")
+    wgbs = formats.read(tmp_path / "processed" / meta.loc["WGBS1/n1", "file"])
+    assert len(wgbs) == 12

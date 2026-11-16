@@ -1,8 +1,8 @@
 """Run the case-study experiments described in a configuration file.
 
 Usage:
-    python scripts/run_experiments.py configs/experiments.yaml e1 e2 e3
-    python scripts/run_experiments.py configs/experiments.yaml all
+    python scripts/run_experiments.py configs/case_study_experiments.yaml e1 e2 e3
+    python scripts/run_experiments.py configs/case_study_experiments.yaml all
 """
 
 import argparse

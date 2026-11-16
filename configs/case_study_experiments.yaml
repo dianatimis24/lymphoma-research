@@ -1,0 +1,55 @@
+metadata: ../data/processed/samples.csv
+cache: ../data/cache
+results: ../results
+
+regions:
+  bins:
+    type: bins
+    bin_size: 1000
+  cpg_islands:
+    type: cpg_islands
+    file: ../data/reference/cpgIslandExt.txt.gz
+    min_cpgs: 3
+  promoters:
+    type: promoters
+    file: ../data/reference/ncbiRefSeq.txt.gz
+    upstream: 1500
+    downstream: 500
+    min_cpgs: 3
+
+pipeline:
+  dmr_method: naive
+  min_cpgs: 10
+  min_sample_fraction: 0.5
+  dmr_threshold: 25
+  n_features: 50
+  classifier: xgboost
+  seed: 42
+
+cv:
+  n_splits: 5
+  inner_splits: 3
+  grid:
+    n_features: [20, 50]
+
+e1:
+  min_cpgs: 100000
+
+e2:
+  regions: [bins, cpg_islands, promoters]
+
+e3:
+  regions: bins
+  min_sample_fraction: 0.8
+  top_variance: 5000
+  method: umap
+
+e4:
+  strategies:
+    - {name: DMR bins, regions: bins}
+    - {name: DMR CpG islands, regions: cpg_islands}
+    - {name: DMR promoters, regions: promoters}
+    - {name: All CpG islands, regions: cpg_islands, dmr_method: all}
+
+e5:
+  regions: bins

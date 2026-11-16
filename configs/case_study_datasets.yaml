@@ -1,0 +1,30 @@
+output: ../data/processed
+min_coverage: 10
+
+datasets:
+  - name: GSE66329
+    reader: rrbs_methylkit
+    folder: ../data/raw/DLBCL
+    pattern: "*.txt.gz"
+    class: DLBCL
+    platform: rrbs
+    sample_type: tissue
+    liftover: ../data/reference/hg19ToHg38.over.chain.gz
+
+  - name: GSE214980
+    reader: rrbs_methylkit
+    folder: ../data/raw/TCell
+    pattern: "*.txt.gz"
+    class: T-cell lymphoma
+    platform: rrbs
+    sample_type: tissue
+    liftover: ../data/reference/hg19ToHg38.over.chain.gz
+
+  - name: GSE164600
+    reader: wgbs_bed
+    folder: ../data/raw/Normal
+    pattern: "*.bed.gz"
+    class: Normal
+    platform: wgbs
+    sample_type: plasma
+    min_coverage: 1

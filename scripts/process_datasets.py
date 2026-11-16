@@ -1,7 +1,7 @@
 """Convert, filter and describe all datasets listed in a configuration file.
 
 Usage:
-    python scripts/process_datasets.py configs/datasets.yaml [--overwrite]
+    python scripts/process_datasets.py configs/case_study_datasets.yaml [--overwrite]
 """
 
 import argparse

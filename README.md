@@ -37,17 +37,17 @@ tests/                        unit tests (pytest)
 
 ## Processing the datasets
 
-All datasets are described in one YAML file (see `configs/datasets.example.yaml`): where the files are, which reader understands them, the platform, the sample type and the class of each sample. A new input format only needs a new reader class registered under a new name.
+All datasets are described in one YAML file (see `configs/case_study_datasets.yaml` and, for a run without data, `configs/demo_datasets.yaml`): where the files are, which reader understands them, the platform, the sample type and the class of each sample. A new input format only needs a new reader class registered under a new name.
 
 ```bash
-python scripts/process_datasets.py configs/datasets.yaml
+python scripts/process_datasets.py configs/case_study_datasets.yaml
 ```
 
 The command writes one common-format file per sample, filtered by the Twist panel and by coverage, and the metadata file `samples.csv`.
 
 ## Experiments
 
-The experiments of the case study are described in one YAML file (see `configs/experiments.example.yaml`):
+The experiments of the case study are described in one YAML file (see `configs/case_study_experiments.yaml`; `configs/validation_experiments.yaml` is the template for the full dataset, including E0):
 
 | Experiment | Question |
 |---|---|
@@ -59,7 +59,7 @@ The experiments of the case study are described in one YAML file (see `configs/e
 | E5 | How much does information leakage overestimate the performance? |
 
 ```bash
-python scripts/run_experiments.py configs/experiments.yaml all
+python scripts/run_experiments.py configs/case_study_experiments.yaml all
 ```
 
 Each experiment writes its tables, figures and a `run.json` (configuration, git commit, package versions) to `results/<experiment>/`.
