@@ -7,7 +7,7 @@ name = "lymphdecoder"
 version = "0.1.0"
 description = "Lymphoma subtype classification from multi-platform DNA methylation data"
 requires-python = ">=3.10"
-dependencies = ["numpy", "pandas", "scikit-learn", "xgboost", "pyyaml"]
+dependencies = ["numpy", "pandas", "scikit-learn", "xgboost", "pyyaml", "matplotlib"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
