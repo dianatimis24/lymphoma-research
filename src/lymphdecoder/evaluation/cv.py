@@ -12,13 +12,14 @@ import itertools
 import logging
 import warnings
 from dataclasses import asdict, dataclass, field, replace
+from typing import Mapping, Union
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import RepeatedStratifiedKFold, StratifiedKFold
 
 from lymphdecoder.features.dmr import make_dmr_finder
-from lymphdecoder.features.regions import decode_keys, region_id
 from lymphdecoder.features.selection import FeatureSelector
 from lymphdecoder.models.classifiers import make_classifier
 
@@ -29,11 +30,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PipelineConfig:
-    """All parameters of one run of the pipeline."""
+    """All parameters of one run of the pipeline.
+
+    ``min_cpgs`` is a number or a mapping from platform to number (with an
+    optional ``default``), see ``features.dmr.resolve_min_cpgs``.
+    """
 
     bin_size: int = 1000
     dmr_method: str = "naive"
-    min_cpgs: int = 10
+    min_cpgs: Union[int, Mapping[str, int]] = 10
     min_sample_fraction: float = 0.5
     dmr_threshold: float = 25.0
     n_features: int = 50
@@ -48,12 +53,20 @@ class PipelineConfig:
     def to_dict(self) -> dict:
         return asdict(self)
 
+    @classmethod
+    def from_dict(cls, d: dict | None) -> "PipelineConfig":
+        d = dict(d or {})
+        unknown = set(d) - set(cls.__dataclass_fields__)
+        if unknown:
+            raise ValueError(f"Unknown pipeline parameters: {sorted(unknown)}")
+        return cls(**d)
 
-def _dmr_keys(store, ids, labels, cfg: PipelineConfig) -> np.ndarray:
+
+def _dmr_keys(store, ids, labels, cfg: PipelineConfig, platforms=None) -> np.ndarray:
     finder = make_dmr_finder(cfg.dmr_method, min_cpgs=cfg.min_cpgs,
                              min_sample_fraction=cfg.min_sample_fraction,
                              threshold=cfg.dmr_threshold)
-    return finder.find(store, list(ids), labels).index.to_numpy()
+    return finder.find(store, list(ids), labels, platforms).index.to_numpy()
 
 
 def _fit_predict(X_train, y_train, X_test, cfg: PipelineConfig, X_select=None, y_select=None):
@@ -70,14 +83,14 @@ def _fit_predict(X_train, y_train, X_test, cfg: PipelineConfig, X_select=None, y
 
 
 def run_fold(store, labels: pd.Series, train_ids, test_ids, cfg: PipelineConfig,
-             leaky: bool = False) -> dict:
+             leaky: bool = False, platforms: pd.Series | None = None) -> dict:
     """Train on ``train_ids`` and predict ``test_ids``.
 
     With ``leaky=True`` DMRs and selected features are computed on all samples.
     """
     train_ids, test_ids = list(train_ids), list(test_ids)
     all_ids = train_ids + test_ids
-    keys = _dmr_keys(store, all_ids if leaky else train_ids, labels, cfg)
+    keys = _dmr_keys(store, all_ids if leaky else train_ids, labels, cfg, platforms)
     if len(keys) == 0:
         raise ValueError("No DMR found on the training samples")
     X_train = store.matrix(train_ids, keys)
@@ -107,11 +120,12 @@ def make_splitter(labels: pd.Series, n_splits: int, n_repeats: int = 1, seed: in
     return StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
 
 
-def _inner_select(store, labels, train_ids, cfg, grid, inner_splits) -> PipelineConfig:
+def _inner_select(store, labels, train_ids, cfg, grid, inner_splits, platforms) -> PipelineConfig:
     """Choose the configuration from ``grid`` with the best inner-CV macro F1.
 
     DMRs and feature matrices are computed once per inner fold and reused for all
-    candidates, because they do not depend on the grid parameters.
+    candidates; the grid must therefore only contain selection and classifier
+    parameters.
     """
     y = labels[train_ids]
     splitter = make_splitter(y, inner_splits, seed=cfg.seed)
@@ -119,7 +133,7 @@ def _inner_select(store, labels, train_ids, cfg, grid, inner_splits) -> Pipeline
     scores = np.zeros(len(candidates))
     ids = np.asarray(train_ids)
     for tr, va in splitter.split(ids, y.to_numpy()):
-        keys = _dmr_keys(store, ids[tr], labels, cfg)
+        keys = _dmr_keys(store, ids[tr], labels, cfg, platforms)
         X_tr, X_va = store.matrix(ids[tr], keys), store.matrix(ids[va], keys)
         y_tr, y_va = labels[ids[tr]].to_numpy(), labels[ids[va]].to_numpy()
         for i, cand in enumerate(candidates):
@@ -128,13 +142,16 @@ def _inner_select(store, labels, train_ids, cfg, grid, inner_splits) -> Pipeline
     return candidates[int(np.argmax(scores))]
 
 
-def expand_grid(cfg: PipelineConfig, grid: dict | None) -> list[PipelineConfig]:
-    """All configurations obtained by combining the values in ``grid``.
+DMR_PARAMETERS = {"bin_size", "dmr_method", "min_cpgs", "min_sample_fraction", "dmr_threshold"}
 
-    Keys are config fields; ``classifier_params`` values are dicts.
-    """
+
+def expand_grid(cfg: PipelineConfig, grid: dict | None) -> list[PipelineConfig]:
+    """All configurations obtained by combining the values in ``grid``."""
     if not grid:
         return [cfg]
+    bad = DMR_PARAMETERS & set(grid)
+    if bad:
+        raise ValueError(f"DMR parameters cannot be tuned in the inner loop: {sorted(bad)}")
     keys = list(grid)
     return [replace(cfg, **dict(zip(keys, values)))
             for values in itertools.product(*(grid[k] for k in keys))]
@@ -142,7 +159,7 @@ def expand_grid(cfg: PipelineConfig, grid: dict | None) -> list[PipelineConfig]:
 
 def cross_validate(store, labels: pd.Series, cfg: PipelineConfig, n_splits: int = 5,
                    n_repeats: int = 1, grid: dict | None = None, inner_splits: int = 3,
-                   leaky: bool = False) -> "CVResult":
+                   leaky: bool = False, platforms: pd.Series | None = None) -> "CVResult":
     """Stratified cross-validation; with a ``grid`` it becomes nested cross-validation."""
     ids = labels.index.to_numpy()
     splitter = make_splitter(labels, n_splits, n_repeats, cfg.seed)
@@ -150,32 +167,35 @@ def cross_validate(store, labels: pd.Series, cfg: PipelineConfig, n_splits: int 
     for k, (tr, te) in enumerate(splitter.split(ids, labels.to_numpy())):
         fold_cfg = cfg
         if grid:
-            fold_cfg = _inner_select(store, labels, ids[tr], cfg, grid, inner_splits)
-        result = run_fold(store, labels, ids[tr], ids[te], fold_cfg, leaky=leaky)
+            fold_cfg = _inner_select(store, labels, ids[tr], cfg, grid, inner_splits, platforms)
+        result = run_fold(store, labels, ids[tr], ids[te], fold_cfg, leaky, platforms)
         result["fold"] = k
         result["config"] = fold_cfg.to_dict()
         folds.append(result)
         logger.info("Fold %d: macro F1 %.3f", k,
                     classification_metrics(result["y_true"], result["y_pred"])["macro_f1"])
-    return CVResult(folds, cfg.bin_size)
+    return CVResult(folds, store.region_names)
 
 
-def fixed_split(store, labels: pd.Series, test_ids, cfg: PipelineConfig) -> "CVResult":
+def fixed_split(store, labels: pd.Series, test_ids, cfg: PipelineConfig,
+                platforms: pd.Series | None = None) -> "CVResult":
     """Single train/test split given by a list of test samples (E0)."""
     test_ids = [t for t in test_ids if t in labels.index]
+    if not test_ids:
+        raise ValueError("None of the test samples is in the data")
     train_ids = [i for i in labels.index if i not in set(test_ids)]
-    result = run_fold(store, labels, train_ids, test_ids, cfg)
+    result = run_fold(store, labels, train_ids, test_ids, cfg, platforms=platforms)
     result["fold"] = 0
     result["config"] = cfg.to_dict()
-    return CVResult([result], cfg.bin_size)
+    return CVResult([result], store.region_names)
 
 
 class CVResult:
     """Predictions and selected features of all folds, with summary metrics."""
 
-    def __init__(self, folds: list[dict], bin_size: int):
+    def __init__(self, folds: list[dict], region_names=None):
         self.folds = folds
-        self.bin_size = bin_size
+        self.region_names = region_names or (lambda keys: [str(k) for k in keys])
 
     def predictions(self) -> pd.DataFrame:
         return pd.concat([pd.DataFrame({"sample_id": f["test_ids"], "fold": f["fold"],
@@ -198,11 +218,25 @@ class CVResult:
         out["feature_stability"] = stability([f["features"] for f in self.folds])
         return out
 
+    def confusion(self) -> pd.DataFrame:
+        """Confusion matrix over all folds (rows: true class, columns: predicted)."""
+        p = self.predictions()
+        classes = sorted(set(p["y_true"]) | set(p["y_pred"]))
+        cm = confusion_matrix(p["y_true"], p["y_pred"], labels=classes)
+        return pd.DataFrame(cm, index=classes, columns=classes)
+
+    def per_class(self) -> pd.DataFrame:
+        """Precision, recall, F1 and support of each class over all folds."""
+        p = self.predictions()
+        report = classification_report(p["y_true"], p["y_pred"], output_dict=True,
+                                       zero_division=0)
+        classes = sorted(set(p["y_true"]))
+        return pd.DataFrame({c: report[c] for c in classes}).T
+
     def selected_features(self) -> pd.DataFrame:
-        """Selected regions per fold, with readable ids (chr_start_end)."""
+        """Selected regions per fold, with readable names (chr_start_end)."""
         rows = []
         for f in self.folds:
-            regions = decode_keys(np.asarray(f["features"]), self.bin_size)
-            for rid in region_id(regions):
-                rows.append({"fold": f["fold"], "region": rid})
-        return pd.DataFrame(rows)
+            for name in self.region_names(np.asarray(f["features"])):
+                rows.append({"fold": f["fold"], "region": name})
+        return pd.DataFrame(rows, columns=["fold", "region"])
