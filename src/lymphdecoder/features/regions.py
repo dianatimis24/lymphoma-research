@@ -77,3 +77,28 @@ def feature_matrix(samples: dict[str, pd.DataFrame], regions: pd.DataFrame) -> p
     """Samples x regions matrix of mean methylation values; missing values stay NaN."""
     rows = {name: region_values(df, regions) for name, df in samples.items()}
     return pd.DataFrame.from_dict(rows, orient="index")
+
+
+def region_stats(df: pd.DataFrame, regions: pd.DataFrame) -> pd.DataFrame:
+    """Mean methylation and number of measured CpGs of one sample in each region.
+
+    ``regions`` has columns ``chr``, ``start``, ``end`` (1-based, closed) and must
+    not contain overlapping regions on the same chromosome. The result is indexed
+    like ``regions`` and only contains regions with at least one measured CpG.
+    """
+    means = np.full(len(regions), np.nan)
+    counts = np.zeros(len(regions), dtype=np.int32)
+    positions = np.arange(len(regions))
+    for chrom, group in regions.groupby("chr", sort=False):
+        sample = df[df["chr"] == chrom].sort_values("base")
+        bases = sample["base"].to_numpy()
+        cum = np.concatenate([[0.0], sample["freqC"].to_numpy().cumsum()])
+        lo = bases.searchsorted(group["start"].to_numpy(), side="left")
+        hi = bases.searchsorted(group["end"].to_numpy(), side="right")
+        n = hi - lo
+        rows = positions[regions.index.get_indexer(group.index)]
+        counts[rows] = n
+        with np.errstate(invalid="ignore", divide="ignore"):
+            means[rows] = np.where(n > 0, (cum[hi] - cum[lo]) / n, np.nan)
+    out = pd.DataFrame({"mean": means, "n_cpgs": counts}, index=regions.index)
+    return out[out["n_cpgs"] > 0]
