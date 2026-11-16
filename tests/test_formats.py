@@ -15,6 +15,7 @@ def test_array_keeps_positions_and_percentages():
     assert df.loc[0, "base"] == 10525
     assert df.loc[0, "freqC"] == pytest.approx(97.6627)
     assert df["coverage"].isna().all()
+    assert (df["strand"] == "*").all()
 
 
 def test_array_fraction_scale_is_converted(tmp_path):
@@ -57,12 +58,16 @@ def test_rrbs_strands_are_merged_with_coverage_weights():
     expected = (45 * 93.333 + 28 * 96.429) / (45 + 28)
     assert row["freqC"] == pytest.approx(expected)
     assert 133181 not in set(df["base"])
+    assert (df["strand"] == "*").all()
 
 
 def test_rrbs_without_merging_keeps_reverse_positions():
     df = formats.read_rrbs_methylkit(DATA / "rrbs_example.tsv", merge_strands=False)
     assert len(df) == 11
-    assert 133181 in set(df["base"])
+    row = df[df["base"] == 133181].iloc[0]
+    assert row["strand"] == "-"
+    assert row["coverage"] == 28
+    assert set(df["strand"]) == {"+", "-"}
 
 
 def test_rows_are_sorted_by_chromosome_and_position(tmp_path):
@@ -107,4 +112,18 @@ def test_invalid_values_are_rejected():
         formats.validate(bad)
     bad = pd.DataFrame({"chr": ["chr1"], "base": [5], "coverage": [pd.NA], "freqC": [150.0]})
     with pytest.raises(ValueError):
+        formats.validate(bad)
+
+
+def test_wgbs_strand_column_is_used_when_present(tmp_path):
+    path = tmp_path / "s.bed"
+    path.write_text("chr1\t10468\t10469\t2\t2\t+\nchr1\t10469\t10470\t1\t2\t-\n")
+    df = formats.read_wgbs_bed(path)
+    assert df[["base", "strand"]].values.tolist() == [[10469, "+"], [10470, "-"]]
+
+
+def test_invalid_strand_is_rejected():
+    bad = pd.DataFrame({"chr": ["chr1"], "base": [5], "strand": ["F"], "coverage": [pd.NA],
+                        "freqC": [50.0]})
+    with pytest.raises(ValueError, match="strand"):
         formats.validate(bad)

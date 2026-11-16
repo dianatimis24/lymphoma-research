@@ -3,11 +3,14 @@
 Common format (one file per sample, tab-separated, hg38):
 
     chr       chromosome name, e.g. ``chr1``
-    base      1-based position of the cytosine of the CpG on the forward strand
+    base      1-based position of the cytosine
+    strand    ``+`` or ``-`` if the measurement belongs to one strand, ``*`` if the
+              strand is unknown (arrays, WGBS without strand) or if the two strands
+              of the CpG were combined (then ``base`` is the C on the + strand)
     coverage  number of reads covering the CpG (missing for arrays)
     freqC     methylation percentage, between 0 and 100
 
-Rows are sorted by chromosome (chr1..chr22, chrX, chrY, chrM) and position.
+Rows are sorted by chromosome (chr1..chr22, chrX, chrY, chrM), position and strand.
 """
 
 from __future__ import annotations
@@ -20,7 +23,8 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-COLUMNS = ["chr", "base", "coverage", "freqC"]
+COLUMNS = ["chr", "base", "strand", "coverage", "freqC"]
+STRANDS = ("+", "-", "*")
 CHROMOSOME_ORDER = [f"chr{i}" for i in range(1, 23)] + ["chrX", "chrY", "chrM"]
 SCALES = ("auto", "fraction", "percent")
 
@@ -46,12 +50,15 @@ def finalize(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["chr", "base", "freqC"]).copy()
     if "coverage" not in df.columns:
         df["coverage"] = pd.NA
+    if "strand" not in df.columns:
+        df["strand"] = "*"
+    df["strand"] = df["strand"].astype(str)
     df["base"] = df["base"].astype("int64")
     df["coverage"] = df["coverage"].astype("Int64")
     df["freqC"] = df["freqC"].astype(float)
     df = df[df["chr"].isin(CHROMOSOME_ORDER)]
     df["chr"] = pd.Categorical(df["chr"], categories=CHROMOSOME_ORDER, ordered=True)
-    df = df.sort_values(["chr", "base"]).reset_index(drop=True)
+    df = df.sort_values(["chr", "base", "strand"]).reset_index(drop=True)
     df["chr"] = df["chr"].astype(str)
     validate(df)
     return df[COLUMNS]
@@ -66,8 +73,10 @@ def validate(df: pd.DataFrame) -> None:
         raise ValueError("Positions must be 1-based (base >= 1)")
     if ((df["freqC"] < 0) | (df["freqC"] > 100)).any():
         raise ValueError("freqC must be between 0 and 100")
-    if df.duplicated(["chr", "base"]).any():
-        raise ValueError("Duplicate (chr, base) positions")
+    if not df["strand"].isin(STRANDS).all():
+        raise ValueError(f"strand must be one of {STRANDS}")
+    if df.duplicated(["chr", "base", "strand"]).any():
+        raise ValueError("Duplicate (chr, base, strand) positions")
 
 
 def read_array(path: str | Path, scale: str = "auto") -> pd.DataFrame:
@@ -112,7 +121,8 @@ def write(df: pd.DataFrame, output: str | Path) -> None:
 
 def read(path: str | Path) -> pd.DataFrame:
     """Read a file written by :func:`write` and check that it respects the format."""
-    df = pd.read_csv(path, sep="\t", na_values="NA",
-                     dtype={"chr": str, "base": np.int64, "coverage": "Int64", "freqC": float})
+    df = pd.read_csv(path, sep="\t", keep_default_na=False, na_values={"coverage": ["NA"]},
+                     dtype={"chr": str, "base": np.int64, "strand": str, "coverage": "Int64",
+                            "freqC": float})
     validate(df)
     return df

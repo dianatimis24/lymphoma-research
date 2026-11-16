@@ -75,15 +75,22 @@ class ArrayReader(Reader):
 
 @register("wgbs_bed")
 class WgbsBedReader(Reader):
-    """WGBS BED file ``chr start end methylated_reads total_reads`` (0-based start)."""
+    """WGBS BED file ``chr start end methylated_reads total_reads`` (0-based start).
+
+    A sixth column with the strand (``+``/``-``) is used if present; otherwise the
+    strand is unknown (``*``).
+    """
 
     def read(self, path):
-        df = pd.read_csv(path, sep="\t", header=None, comment="#",
-                         names=["chr", "start", "end", "methylated", "coverage"])
+        df = pd.read_csv(path, sep="\t", header=None, comment="#")
+        if df.shape[1] not in (5, 6):
+            raise ValueError(f"{path}: expected 5 or 6 columns, found {df.shape[1]}")
+        df.columns = ["chr", "start", "end", "methylated", "coverage", "strand"][:df.shape[1]]
         df = df[df["coverage"] > 0]
         return finalize(pd.DataFrame({
             "chr": df["chr"],
             "base": df["start"] + 1,
+            "strand": df["strand"] if "strand" in df.columns else "*",
             "coverage": df["coverage"],
             "freqC": df["methylated"] * 100.0 / df["coverage"],
         }))
@@ -93,9 +100,14 @@ class WgbsBedReader(Reader):
 class RrbsMethylKitReader(Reader):
     """RRBS file in methylKit format: ``chrBase chr base strand coverage freqC freqT``.
 
-    A CpG measured on the reverse strand is reported at the position of its G,
-    one base after the C on the forward strand. With ``merge_strands`` the two
-    measurements of a CpG are combined, weighting them by coverage.
+    ``strand`` is ``F`` or ``R``. A CpG measured on the reverse strand is reported
+    at the position of its G, one base after the C on the forward strand.
+
+    * ``merge_strands=True`` (default): the two measurements of a CpG are combined,
+      weighting them by coverage; the row gets strand ``*`` and the position of
+      the C on the + strand, so it matches arrays and WGBS.
+    * ``merge_strands=False``: every measurement is kept with strand ``+`` or ``-``
+      and the position given in the file.
     """
 
     def __init__(self, merge_strands: bool = True):
@@ -104,12 +116,16 @@ class RrbsMethylKitReader(Reader):
     def read(self, path):
         df = pd.read_csv(path, sep="\t")
         base = df["base"].astype("int64")
+        strand = df["strand"].map({"F": "+", "R": "-", "+": "+", "-": "-"})
+        if strand.isna().any():
+            raise ValueError(f"{path}: strand must be F/R or +/-")
         if self.merge_strands:
-            base = base.where(df["strand"] == "F", base - 1)
-        out = pd.DataFrame({"chr": df["chr"], "base": base,
+            base = base.where(strand == "+", base - 1)
+            strand = pd.Series("*", index=df.index)
+        out = pd.DataFrame({"chr": df["chr"], "base": base, "strand": strand,
                             "coverage": df["coverage"].astype("int64"),
                             "methylated": df["coverage"] * df["freqC"] / 100.0})
-        out = out.groupby(["chr", "base"], as_index=False)[["coverage", "methylated"]].sum()
+        out = out.groupby(["chr", "base", "strand"], as_index=False)[["coverage", "methylated"]].sum()
         out["freqC"] = out["methylated"] * 100.0 / out["coverage"]
         return finalize(out.drop(columns="methylated"))
 
