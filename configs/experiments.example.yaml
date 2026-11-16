@@ -1,0 +1,62 @@
+metadata: ../data/processed/samples.csv
+cache: ../data/cache
+results: ../results
+
+classes: null
+min_class_size: 8
+
+regions:
+  bins:
+    type: bins
+    bin_size: 1000
+  cpg_islands:
+    type: cpg_islands
+    file: ../data/reference/cpgIslandExt.txt.gz
+  promoters:
+    type: promoters
+    file: ../data/reference/ncbiRefSeq.txt.gz
+    upstream: 1500
+    downstream: 500
+
+pipeline:
+  dmr_method: naive
+  min_cpgs: {default: 10, array_450k: 1, array_epic: 1}
+  min_sample_fraction: 0.5
+  dmr_threshold: 25
+  n_features: 50
+  classifier: xgboost
+  seed: 42
+
+cv:
+  n_splits: 5
+  n_repeats: 1
+  inner_splits: 3
+  grid:
+    n_features: [20, 50]
+
+e0:
+  test_set: ../data/Test_set.txt
+  regions: bins
+  baseline: {}
+
+e1:
+  min_cpgs: 1000
+
+e2:
+  regions: [bins, cpg_islands, promoters]
+
+e3:
+  regions: bins
+  min_sample_fraction: 0.8
+  top_variance: 5000
+  method: umap
+
+e4:
+  strategies:
+    - {name: DMR bins, regions: bins, dmr_method: naive}
+    - {name: DMR CpG islands, regions: cpg_islands, dmr_method: naive, min_cpgs: {default: 3, array_450k: 1, array_epic: 1}}
+    - {name: DMR promoters, regions: promoters, dmr_method: naive, min_cpgs: {default: 3, array_450k: 1, array_epic: 1}}
+    - {name: All CpG islands, regions: cpg_islands, dmr_method: all, min_cpgs: {default: 3, array_450k: 1, array_epic: 1}}
+
+e5:
+  regions: bins
