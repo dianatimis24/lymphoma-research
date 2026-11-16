@@ -59,5 +59,7 @@ def save_run(folder: str | Path, config: dict, result=None, extra: dict | None =
         result.predictions().to_csv(folder / "predictions.csv", index=False)
         result.fold_metrics().to_csv(folder / "fold_metrics.csv", index=False)
         result.selected_features().to_csv(folder / "selected_features.csv", index=False)
+        result.confusion().to_csv(folder / "confusion_matrix.csv")
+        result.per_class().to_csv(folder / "per_class.csv")
     (folder / "run.json").write_text(json.dumps(info, indent=2))
     return folder
