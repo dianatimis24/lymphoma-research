@@ -127,3 +127,13 @@ def test_invalid_strand_is_rejected():
                         "freqC": [50.0]})
     with pytest.raises(ValueError, match="strand"):
         formats.validate(bad)
+
+
+def test_rrbs_without_header_and_with_extra_columns():
+    df = formats.read_rrbs_methylkit(DATA / "rrbs_noheader_example.txt")
+    assert df["base"].tolist() == [10497, 10525, 10542]
+    row = df[df["base"] == 10497].iloc[0]
+    assert row["coverage"] == 117 + 143
+    assert row["freqC"] == pytest.approx(117 * 82.051282051282 / 260)
+    kept = formats.read_rrbs_methylkit(DATA / "rrbs_noheader_example.txt", merge_strands=False)
+    assert len(kept) == 5

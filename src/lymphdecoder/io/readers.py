@@ -108,15 +108,28 @@ class RrbsMethylKitReader(Reader):
       the C on the + strand, so it matches arrays and WGBS.
     * ``merge_strands=False``: every measurement is kept with strand ``+`` or ``-``
       and the position given in the file.
+
+    The header line is optional, and columns after ``freqT`` (present in some
+    files, sometimes with a trailing tab) are ignored.
     """
+
+    COLUMNS = ["chrBase", "chr", "base", "strand", "coverage", "freqC", "freqT"]
 
     def __init__(self, merge_strands: bool = True):
         self.merge_strands = merge_strands
 
     def read(self, path):
-        df = pd.read_csv(path, sep="\t")
-        base = df["base"].astype("int64")
-        strand = df["strand"].map({"F": "+", "R": "-", "+": "+", "-": "-"})
+        df = pd.read_csv(path, sep="\t", header=None, usecols=range(len(self.COLUMNS)),
+                         dtype=str, skip_blank_lines=True)
+        df.columns = self.COLUMNS
+        if len(df) and df.iloc[0]["chrBase"] == "chrBase":
+            df = df.iloc[1:]
+        df = df.dropna(subset=["chr", "base", "strand", "coverage", "freqC"])
+        df["base"] = df["base"].astype("int64")
+        df["coverage"] = df["coverage"].astype("int64")
+        df["freqC"] = df["freqC"].astype(float)
+        base = df["base"]
+        strand = df["strand"].str.strip().map({"F": "+", "R": "-", "+": "+", "-": "-"})
         if strand.isna().any():
             raise ValueError(f"{path}: strand must be F/R or +/-")
         if self.merge_strands:
