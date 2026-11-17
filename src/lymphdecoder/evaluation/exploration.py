@@ -34,13 +34,47 @@ def sample_summary(sample_ids: Iterable[str], loader: Callable[[str], pd.DataFra
     return pd.DataFrame(rows).set_index("sample_id")
 
 
-def flag_samples(summary: pd.DataFrame, min_cpgs: int = 1000) -> pd.DataFrame:
-    """Samples that look wrong: too few CpGs or a mean methylation far from the others."""
-    flags = pd.DataFrame(index=summary.index)
+def _robust_z(values: pd.Series) -> pd.Series:
+    """Distance from the median in units of the scaled median absolute deviation."""
+    median = values.median()
+    mad = 1.4826 * (values - median).abs().median()
+    if not np.isfinite(mad) or mad == 0:
+        return pd.Series(0.0, index=values.index)
+    return (values - median) / mad
+
+
+def flag_samples(summary: pd.DataFrame, min_cpgs: int = 1000, max_z: float = 3.5,
+                 min_coverage_ratio: float = 0.25) -> pd.DataFrame:
+    """Samples that look wrong compared with the other samples of the same platform.
+
+    Platforms measure very different numbers of CpGs and levels of methylation,
+    so every sample is compared only with its own platform. Robust statistics
+    (median and median absolute deviation) are used, so that one bad sample does
+    not hide itself by inflating the spread. A sample is flagged if it has fewer
+    than ``min_cpgs`` CpGs, a median coverage below ``min_coverage_ratio`` times
+    the platform median, or a mean methylation, fraction of fully methylated or
+    fraction of unmethylated CpGs more than ``max_z`` robust deviations away from
+    the platform median. The ``reason`` column lists the triggered checks.
+    """
+    groups = summary["platform"] if "platform" in summary.columns else pd.Series(
+        "all", index=summary.index)
+    flags = pd.DataFrame(False, index=summary.index,
+                         columns=["too_few_cpgs", "low_coverage", "outlier_mean",
+                                  "outlier_fraction_100", "outlier_fraction_0"])
     flags["too_few_cpgs"] = summary["n_cpgs"] < min_cpgs
-    m = summary["mean_methylation"]
-    flags["outlier_mean"] = (m - m.median()).abs() > 3 * (m.std(ddof=0) + 1e-9)
-    return flags[flags.any(axis=1)]
+    for _, idx in groups.groupby(groups).groups.items():
+        part = summary.loc[idx]
+        cov = part["median_coverage"]
+        if cov.notna().any():
+            flags.loc[idx, "low_coverage"] = cov < min_coverage_ratio * cov.median()
+        if len(part) >= 4:
+            flags.loc[idx, "outlier_mean"] = _robust_z(part["mean_methylation"]).abs() > max_z
+            flags.loc[idx, "outlier_fraction_100"] = _robust_z(part["fraction_100"]).abs() > max_z
+            flags.loc[idx, "outlier_fraction_0"] = _robust_z(part["fraction_0"]).abs() > max_z
+    flagged = flags[flags.any(axis=1)].copy()
+    flagged["reason"] = [", ".join(c for c in flags.columns if row[c])
+                         for _, row in flagged.iterrows()]
+    return flagged
 
 
 def platform_overlap(store, platforms: pd.Series, min_cpgs=1,

@@ -20,10 +20,31 @@ def test_test_set_entries_are_matched_by_file_name():
 
 def test_flagged_samples_and_summary():
     summary = pd.DataFrame({"n_cpgs": [5000, 5000, 10, 5000],
-                            "mean_methylation": [50, 51, 49, 50]},
+                            "mean_methylation": [50, 51, 49, 50],
+                            "fraction_0": [0.2, 0.2, 0.2, 0.2],
+                            "fraction_100": [0.1, 0.1, 0.1, 0.1],
+                            "median_coverage": [30, 30, 30, 30]},
                            index=["a", "b", "c", "d"])
     flags = exploration.flag_samples(summary, min_cpgs=1000)
     assert list(flags.index) == ["c"]
+    assert flags.loc["c", "reason"] == "too_few_cpgs"
+
+
+def test_low_coverage_sample_is_flagged_within_its_platform():
+    normal = {f"CTRL{i}": (79.0 + 0.3 * (i % 4), 0.30 + 0.01 * (i % 5), 18.0 + i % 6)
+              for i in range(1, 13)}
+    normal["CTRL11"] = (83.0, 0.74, 2.0)
+    rows = [{"sample_id": k, "platform": "wgbs", "n_cpgs": 26_000_000, "mean_methylation": m,
+             "fraction_0": 0.08, "fraction_100": f, "median_coverage": c}
+            for k, (m, f, c) in normal.items()]
+    rows += [{"sample_id": f"D{i}", "platform": "rrbs", "n_cpgs": 2_800_000,
+              "mean_methylation": 40.0 + i, "fraction_0": 0.27, "fraction_100": 0.05 + 0.01 * i,
+              "median_coverage": 70.0 + i} for i in range(8)]
+    summary = pd.DataFrame(rows).set_index("sample_id")
+    flags = exploration.flag_samples(summary)
+    assert list(flags.index) == ["CTRL11"]
+    assert "low_coverage" in flags.loc["CTRL11", "reason"]
+    assert "outlier_fraction_100" in flags.loc["CTRL11", "reason"]
 
 
 def test_plots_are_written(tmp_path):
