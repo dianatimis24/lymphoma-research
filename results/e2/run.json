@@ -1,0 +1,22 @@
+{
+  "config": {
+    "min_cpgs": {
+      "bins": 10,
+      "cpg_islands": 3,
+      "promoters": 3
+    },
+    "min_sample_fraction": 0.5
+  },
+  "run": {
+    "git_commit": "597258b-dirty",
+    "date": "2026-11-17T21:25:13",
+    "python": "3.14.4",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "packages": {
+      "numpy": "2.5.4",
+      "pandas": "3.1.1",
+      "scikit-learn": "1.9.1",
+      "xgboost": "3.4.1"
+    }
+  }
+}

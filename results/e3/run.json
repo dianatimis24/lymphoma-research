@@ -1,0 +1,45 @@
+{
+  "config": {
+    "regions": "bins",
+    "n_regions": 5000,
+    "method": "umap"
+  },
+  "run": {
+    "git_commit": "597258b-dirty",
+    "date": "2026-11-17T21:26:47",
+    "python": "3.14.4",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "packages": {
+      "numpy": "2.5.4",
+      "pandas": "3.1.1",
+      "scikit-learn": "1.9.1",
+      "xgboost": "3.4.1"
+    }
+  },
+  "ari": [
+    {
+      "grouping": "class",
+      "n_groups": 3,
+      "silhouette": 0.3220399578653449,
+      "ari": 0.2240564912448113
+    },
+    {
+      "grouping": "platform",
+      "n_groups": 2,
+      "silhouette": 0.2771985223962132,
+      "ari": 0.06570148672336558
+    },
+    {
+      "grouping": "sample_type",
+      "n_groups": 2,
+      "silhouette": 0.2771985223962132,
+      "ari": 0.06570148672336558
+    },
+    {
+      "grouping": "dataset",
+      "n_groups": 3,
+      "silhouette": 0.3220399578653449,
+      "ari": 0.2240564912448113
+    }
+  ]
+}

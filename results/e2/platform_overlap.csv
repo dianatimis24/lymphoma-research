@@ -1,0 +1,10 @@
+regions,platform_a,platform_b,regions_a,regions_b,shared,jaccard
+bins,rrbs,rrbs,65395,65395,65395,1.0
+bins,wgbs,wgbs,973503,973503,973503,1.0
+bins,rrbs,wgbs,65395,973503,62553,0.06406854134552847
+cpg_islands,rrbs,rrbs,24220,24220,24220,1.0
+cpg_islands,wgbs,wgbs,26145,26145,26145,1.0
+cpg_islands,rrbs,wgbs,24220,26145,23307,0.861371867839456
+promoters,rrbs,rrbs,23597,23597,23597,1.0
+promoters,wgbs,wgbs,46173,46173,46173,1.0
+promoters,rrbs,wgbs,23597,46173,22954,0.4903024606971975
