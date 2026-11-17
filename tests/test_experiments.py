@@ -109,6 +109,8 @@ def test_all_experiments_run_and_save_results(project):
     ari = out["e3"].set_index("grouping")["ari"]
     assert ari["class"] > 0.9
     assert ari["class"] > ari["platform"]
+    sil = out["e3"].set_index("grouping")["silhouette"]
+    assert sil["class"] > sil["platform"]
     assert (results / "e3" / "embedding_platform.png").exists()
     e4 = out["e4"].set_index("strategy")
     assert e4.loc["DMR bins", "macro_f1_mean"] > 0.9
@@ -134,3 +136,21 @@ def test_unknown_experiment_and_region_set_are_reported(project):
         run(project, ["e9"])
     with pytest.raises(ValueError, match="Unknown region set"):
         Experiments(project).store("promoters")
+
+
+def test_grouping_agreement_is_robust_to_one_outlier():
+    rng = np.random.default_rng(0)
+    centres = {"A": 0.0, "B": 6.0, "C": 12.0}
+    rows, labels = [], []
+    for label, c in centres.items():
+        for _ in range(8):
+            rows.append(rng.normal(c, 1.0, 30))
+            labels.append(label)
+    rows.append(rng.normal(0.0, 1.0, 30) + 25 * (np.arange(30) % 2))
+    labels.append("A")
+    X = pd.DataFrame(rows, index=[f"s{i}" for i in range(len(rows))])
+    groups = pd.Series(labels, index=X.index)
+    _, table = exploration.grouping_agreement(X, {"class": groups}, n_clusters=3)
+    row = table.iloc[0]
+    assert row["silhouette"] > 0.4
+    assert row["ari"] > 0.6

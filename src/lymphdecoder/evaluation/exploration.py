@@ -8,9 +8,9 @@ from typing import Callable, Iterable
 
 import numpy as np
 import pandas as pd
-from sklearn.cluster import KMeans
+from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import PCA
-from sklearn.metrics import adjusted_rand_score
+from sklearn.metrics import adjusted_rand_score, silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from lymphdecoder.features.dmr import resolve_min_cpgs
@@ -132,19 +132,30 @@ def embed(X: pd.DataFrame, method: str = "umap", seed: int = 42) -> np.ndarray:
 
 def grouping_agreement(X: pd.DataFrame, groupings: dict[str, pd.Series], n_clusters: int,
                        n_components: int = 10, seed: int = 42) -> tuple[pd.Series, pd.DataFrame]:
-    """Cluster the samples and compare the clusters with each grouping (E3).
+    """How strongly the samples group by each known grouping (E3).
 
-    The samples are clustered with k-means on the first principal components;
-    the adjusted Rand index (ARI) measures the agreement of the clusters with the
-    classes, the platforms, the sample types, etc. Returns the cluster of each
-    sample and a table with one ARI per grouping.
+    The samples are standardised and projected on their first principal
+    components. Two complementary measures are computed for every grouping
+    (class, platform, sample type, dataset):
+
+    * ``silhouette``: how well the known groups are separated in that space,
+      from -1 (wrong) to 1 (perfectly separated); no clustering is involved;
+    * ``ari``: agreement (adjusted Rand index) between the groups and an
+      unsupervised Ward clustering into ``n_clusters`` clusters, which is more
+      stable than k-means on small sets of samples.
+
+    Returns the cluster of each sample and a table with both measures.
     """
     Z = StandardScaler().fit_transform(X)
     n_components = max(1, min(n_components, Z.shape[0] - 1, Z.shape[1]))
     P = PCA(n_components=n_components, random_state=seed).fit_transform(Z)
-    clusters = KMeans(n_clusters=n_clusters, n_init=10, random_state=seed).fit_predict(P)
+    clusters = AgglomerativeClustering(n_clusters=n_clusters, linkage="ward").fit_predict(P)
     clusters = pd.Series(clusters, index=X.index, name="cluster")
-    rows = [{"grouping": name, "n_groups": g.loc[X.index].nunique(),
-             "ari": adjusted_rand_score(g.loc[X.index], clusters)}
-            for name, g in groupings.items()]
+    rows = []
+    for name, g in groupings.items():
+        labels = g.loc[X.index]
+        n_groups = labels.nunique()
+        sil = silhouette_score(P, labels) if 1 < n_groups < len(labels) else np.nan
+        rows.append({"grouping": name, "n_groups": n_groups, "silhouette": sil,
+                     "ari": adjusted_rand_score(labels, clusters)})
     return clusters, pd.DataFrame(rows)
