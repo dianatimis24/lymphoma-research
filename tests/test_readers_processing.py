@@ -153,3 +153,27 @@ def test_coverage_threshold_can_be_set_per_dataset(tmp_path):
     meta = process(ProcessingConfig.load(path)).set_index("sample_id")
     wgbs = formats.read(tmp_path / "processed" / meta.loc["WGBS1/n1", "file"])
     assert len(wgbs) == 12
+
+
+def test_processed_samples_are_not_read_again(tmp_path, monkeypatch):
+    config = ProcessingConfig.load(make_project(tmp_path))
+    process(config)
+
+    def fail(*args, **kwargs):
+        raise AssertionError("raw file read again")
+
+    monkeypatch.setattr(readers.RrbsMethylKitReader, "read", fail)
+    monkeypatch.setattr(readers.WgbsBedReader, "read", fail)
+    monkeypatch.setattr(readers.MatrixReader, "read_samples", fail)
+    meta = process(config)
+    assert len(meta) == 4
+
+
+def test_excluded_samples_disappear_from_the_metadata(tmp_path):
+    path = make_project(tmp_path)
+    process(ProcessingConfig.load(path))
+    raw = yaml.safe_load(path.read_text())
+    raw["datasets"][1]["exclude"] = ["n1"]
+    path.write_text(yaml.safe_dump(raw))
+    meta = process(ProcessingConfig.load(path))
+    assert "WGBS1/n1" not in set(meta["sample_id"])

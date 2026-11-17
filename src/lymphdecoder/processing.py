@@ -115,22 +115,36 @@ class DatasetSpec:
             paths.append(self.liftover)
         return [p for p in paths if not p.exists()]
 
-    def iter_samples(self) -> Iterator[tuple[str, str, pd.DataFrame]]:
-        """Yield ``(sample name, class, dataframe)`` for every sample of the dataset."""
+    def sample_list(self) -> list[tuple[str, str]]:
+        """``(sample name, class)`` of every sample of the dataset, without reading any data."""
+        if self.folder is not None:
+            names = [sample_name(p) for p in sorted(self.folder.glob(self.pattern)) if p.is_file()]
+            return [(n, self.sample_class) for n in names if n not in self.exclude]
+        return [(c, self.samples[c]) for c in self.samples if c not in self.exclude]
+
+    def read_samples(self, names: list[str]) -> Iterator[tuple[str, pd.DataFrame]]:
+        """Read only the given samples; yields ``(sample name, dataframe)``."""
+        if not names:
+            return
         reader = make_reader(self.reader, **self.reader_params)
+        wanted = set(names)
         if self.folder is not None:
             if not isinstance(reader, Reader):
                 raise ValueError(f"Reader {self.reader!r} cannot read single-sample files")
             for path in sorted(p for p in self.folder.glob(self.pattern) if p.is_file()):
                 name = sample_name(path)
-                if name not in self.exclude and path.stem not in self.exclude:
-                    yield name, self.sample_class, reader.read(path)
+                if name in wanted:
+                    yield name, reader.read(path)
         else:
             if not isinstance(reader, MultiSampleReader):
                 raise ValueError(f"Reader {self.reader!r} cannot read multi-sample files")
-            columns = [c for c in self.samples if c not in self.exclude]
-            for col, df in reader.read_samples(self.file, columns).items():
-                yield col, self.samples[col], df
+            yield from reader.read_samples(self.file, [c for c in self.samples if c in wanted]).items()
+
+    def iter_samples(self) -> Iterator[tuple[str, str, pd.DataFrame]]:
+        """Yield ``(sample name, class, dataframe)`` for every sample of the dataset."""
+        labels = dict(self.sample_list())
+        for name, df in self.read_samples(list(labels)):
+            yield name, labels[name], df
 
 
 @dataclass
@@ -174,18 +188,24 @@ def process(config: ProcessingConfig, overwrite: bool = False) -> pd.DataFrame:
     rows = []
     for spec in config.datasets:
         out_dir = config.output / spec.name
-        for sample, label, df in spec.iter_samples():
+        samples = spec.sample_list()
+        todo = [name for name, _ in samples
+                if overwrite or not (out_dir / f"{name}.tsv").exists()]
+        if len(todo) < len(samples):
+            logger.info("%s: %d of %d samples already processed", spec.name,
+                        len(samples) - len(todo), len(samples))
+        for sample, df in spec.read_samples(todo):
+            n_raw = len(df)
+            if spec.liftover is not None:
+                df = lift(df, Chain.load(spec.liftover))
+            if panel is not None:
+                df = filter_by_panel(df, panel)
+            min_cov = spec.min_coverage if spec.min_coverage is not None else config.min_coverage
+            df = filter_by_coverage(df, min_cov)
+            write(df, out_dir / f"{sample}.tsv")
+            logger.info("%s/%s: %d -> %d CpGs", spec.name, sample, n_raw, len(df))
+        for sample, label in samples:
             out_file = out_dir / f"{sample}.tsv"
-            if overwrite or not out_file.exists():
-                n_raw = len(df)
-                if spec.liftover is not None:
-                    df = lift(df, Chain.load(spec.liftover))
-                if panel is not None:
-                    df = filter_by_panel(df, panel)
-                min_cov = spec.min_coverage if spec.min_coverage is not None else config.min_coverage
-                df = filter_by_coverage(df, min_cov)
-                write(df, out_file)
-                logger.info("%s/%s: %d -> %d CpGs", spec.name, sample, n_raw, len(df))
             rows.append({"sample_id": f"{spec.name}/{sample}",
                          "file": str(out_file.relative_to(config.output)).replace("\\", "/"),
                          "class": label, "platform": spec.platform, "dataset": spec.name,
