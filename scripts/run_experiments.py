@@ -7,6 +7,7 @@ Usage:
 
 import argparse
 import logging
+import sys
 
 import pandas as pd
 
@@ -18,7 +19,7 @@ def main():
     parser.add_argument("config", help="YAML file with the experiment settings")
     parser.add_argument("experiments", nargs="+", help=f"any of {', '.join(EXPERIMENTS)} or all")
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", stream=sys.stdout)
     try:
         results = run(args.config, [e.lower() for e in args.experiments])
     except (FileNotFoundError, ValueError) as err:

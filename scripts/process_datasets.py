@@ -6,6 +6,7 @@ Usage:
 
 import argparse
 import logging
+import sys
 
 from lymphdecoder.processing import ProcessingConfig, process
 
@@ -15,7 +16,7 @@ def main():
     parser.add_argument("config", help="YAML file describing the datasets")
     parser.add_argument("--overwrite", action="store_true", help="process samples again")
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", stream=sys.stdout)
     try:
         meta = process(ProcessingConfig.load(args.config), overwrite=args.overwrite)
     except (FileNotFoundError, ValueError) as err:
